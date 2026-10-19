@@ -21,6 +21,12 @@ W3Bundle build -dir=<source> -outdir=<content>
 dotnet publish
 ```
 
+## Test
+
+```sh
+dotnet test
+```
+
 ## Limitations
 
 - `metadatastore` supports exactly one `.bundle` per directory

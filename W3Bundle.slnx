@@ -1,3 +1,8 @@
 <Solution>
-  <Project Path="src/W3Bundle/W3Bundle.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/W3Bundle/W3Bundle.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/W3Bundle.Tests/W3Bundle.Tests.csproj" />
+  </Folder>
 </Solution>
