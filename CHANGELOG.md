@@ -4,6 +4,7 @@
 
 - Paths keep their original case, as wcc_lite does. `metadata.store` hashes are still case-insensitive (ASCII only)
 - Non-ASCII paths are stored as UTF-8 instead of `?`
+- `metadatastore` directory table order now matches wcc_lite for nested trees
 
 ## 0.1.0
 

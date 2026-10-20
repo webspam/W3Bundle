@@ -81,6 +81,22 @@ public sealed class MetadataStoreTests : IDisposable {
     }
 
     [Test]
+    public async Task ListsDirectoriesDepthFirstInOrderOfFirstAppearance() {
+        var store = Build(
+            Entry(@"a\x.txt", 0),
+            Entry(@"b\y.txt", 1),
+            Entry(@"a\c\z.txt", 2));
+
+        var directories = store.Directories.Select(d => (store.StringAt(d.NameOffset), d.Parent));
+        var fileDirectories = store.FileDirectories.Select(f => (f.File, f.Directory));
+
+        using (Assert.Multiple()) {
+            await Assert.That(directories).IsEquivalentTo([("", 0u), ("a", 0u), ("c", 1u), ("b", 0u)], CollectionOrdering.Matching);
+            await Assert.That(fileDirectories).IsEquivalentTo([(1u, 1u), (2u, 3u), (3u, 2u)], CollectionOrdering.Matching);
+        }
+    }
+
+    [Test]
     public async Task WritesStringTableInDocumentedOrder() {
         var store = Build(
             Entry(@"a\b\x.txt", 0),

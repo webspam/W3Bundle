@@ -74,13 +74,17 @@ Files are listed in **data offset order**, 1-based (index 0 is an all-zero null 
 | Entries          | count = N + 1; 6 × u32: data offset, 0, compressed size, 0, file index, bundle index (1)                                                             |
 | Bundles          | count = 2; 6 × u32: data block size (aligned bundle size − data start), 0, data start, name string offset, first file (1), file count                |
 | Unknown          | 1 byte `0x80` (meaning unknown, copied from wcc_lite, possible terminator)                                                                           |
-| Directories      | count = D; 2 × u32: name string offset, parent index. Index 0 is root (`""`, parent 0). Order of first appearance walking files                      |
+| Directories      | count = D; 2 × u32: name string offset, parent index. Index 0 is root (`""`, parent 0). See [Directories](#directories)                             |
 | File directories | count = N; 3 × u32: file index, directory index, string offset of file name (byte offset inside the full path string)                               |
 | Hashes           | count = N; u64 path hash, u32 file index, i32 `0` for file 1 and `-1` for all others (meaning unknown, copied from wcc_lite). Sorted by hash     |
 
 Strings are UTF-8 in original case.
 
 String table order: `""`, bundle name, file paths (file order), `""` (root directory, not deduplicated), directory names (directory order).
+
+### Directories
+
+Created walking files in file order, children in order of first appearance. Written depth-first, pre-order.
 
 ### Hashes
 

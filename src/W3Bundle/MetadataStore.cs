@@ -32,13 +32,10 @@ public static class MetadataStore {
         uint bundleNameOffset = strings.Add(bundleName);
         var pathOffsets = files.Select(f => strings.Add(f.Path)).ToArray();
 
-        var directories = new List<(string FullPath, string Name, int Parent)> { ("", "", 0) };
-        var directoryIndex = new Dictionary<string, int>(StringComparer.Ordinal) { [""] = 0 };
-        var fileDirectories = new int[files.Length];
-        for (int i = 0; i < files.Length; i++) {
-            fileDirectories[i] = ResolveDirectory(files[i].Path, directories, directoryIndex);
-        }
-        var directoryNameOffsets = directories.Select(d => strings.Add(d.Name)).ToArray();
+        var directories = new DirectoryTree();
+        var fileDirectories = files.Select(f => directories.Resolve(f.Path)).ToArray();
+        var directoryList = directories.InDepthFirstOrder();
+        var directoryNameOffsets = directoryList.Select(d => strings.Add(d.Name)).ToArray();
 
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
@@ -87,10 +84,10 @@ public static class MetadataStore {
         writer.Write((uint)files.Length);
         writer.Write(BundlesTerminator);
 
-        WriteCompressedInt(writer, directories.Count);
-        for (int i = 0; i < directories.Count; i++) {
+        WriteCompressedInt(writer, directoryList.Count);
+        for (int i = 0; i < directoryList.Count; i++) {
             writer.Write(directoryNameOffsets[i]);
-            writer.Write((uint)directories[i].Parent);
+            writer.Write((uint)(directoryList[i].Parent?.Index ?? 0));
         }
 
         WriteCompressedInt(writer, files.Length);
@@ -98,7 +95,7 @@ public static class MetadataStore {
             string path = files[i].Path;
             int nameStart = Encoding.UTF8.GetByteCount(path.AsSpan(0, path.LastIndexOf('\\') + 1));
             writer.Write((uint)(i + 1));
-            writer.Write((uint)fileDirectories[i]);
+            writer.Write((uint)fileDirectories[i].Index);
             writer.Write(pathOffsets[i] + (uint)nameStart);
         }
 
@@ -117,21 +114,45 @@ public static class MetadataStore {
         return stream.ToArray();
     }
 
-    static int ResolveDirectory(string filePath, List<(string FullPath, string Name, int Parent)> directories, Dictionary<string, int> directoryIndex) {
-        int parent = 0;
-        int separator = filePath.IndexOf('\\');
-        while (separator >= 0) {
-            string fullPath = filePath[..separator];
-            if (!directoryIndex.TryGetValue(fullPath, out int index)) {
-                int nameStart = fullPath.LastIndexOf('\\') + 1;
-                index = directories.Count;
-                directories.Add((fullPath, fullPath[nameStart..], parent));
-                directoryIndex[fullPath] = index;
+    sealed class DirectoryNode(string name, DirectoryNode? parent) {
+        public string Name { get; } = name;
+        public DirectoryNode? Parent { get; } = parent;
+        public List<DirectoryNode> Children { get; } = [];
+        public int Index { get; set; }
+    }
+
+    sealed class DirectoryTree {
+        readonly DirectoryNode root = new("", null);
+        readonly Dictionary<string, DirectoryNode> byPath = new(StringComparer.Ordinal);
+
+        public DirectoryNode Resolve(string filePath) {
+            var current = root;
+            int separator = filePath.IndexOf('\\');
+            while (separator >= 0) {
+                string fullPath = filePath[..separator];
+                if (!byPath.TryGetValue(fullPath, out var node)) {
+                    node = new DirectoryNode(fullPath[(fullPath.LastIndexOf('\\') + 1)..], current);
+                    current.Children.Add(node);
+                    byPath[fullPath] = node;
+                }
+                current = node;
+                separator = filePath.IndexOf('\\', separator + 1);
             }
-            parent = index;
-            separator = filePath.IndexOf('\\', separator + 1);
+            return current;
         }
-        return parent;
+
+        public List<DirectoryNode> InDepthFirstOrder() {
+            var ordered = new List<DirectoryNode>(byPath.Count + 1);
+            var pending = new Stack<DirectoryNode>([root]);
+            while (pending.TryPop(out var node)) {
+                node.Index = ordered.Count;
+                ordered.Add(node);
+                for (int i = node.Children.Count - 1; i >= 0; i--) {
+                    pending.Push(node.Children[i]);
+                }
+            }
+            return ordered;
+        }
     }
 
     static ulong PathHash(string path) {
