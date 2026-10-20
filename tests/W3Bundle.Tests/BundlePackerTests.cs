@@ -61,7 +61,7 @@ public sealed class BundlePackerTests : IDisposable {
 
     [Test]
     public async Task RejectsPathsLongerThanTheNameSlotInUtf8() {
-        source.Write($"{new string('’', 85)}.txt", TestData.Text(64));
+        source.Write($"{new string('’', 43)}/{new string('’', 42)}.txt", TestData.Text(64));
 
         await Assert.That(() => BundlePacker.Pack(source.Path, output.Path)).Throws<InvalidDataException>();
     }
