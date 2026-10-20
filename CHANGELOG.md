@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - Paths keep their original case, as wcc_lite does. `metadata.store` hashes are still case-insensitive (ASCII only)
 - Non-ASCII paths are stored as UTF-8 instead of `?`
