@@ -1,7 +1,5 @@
 using System.IO.Hashing;
 
-using LZ4;
-
 namespace W3Bundle;
 
 public static class BundlePacker {
@@ -66,7 +64,7 @@ public static class BundlePacker {
 
     static PackedFile Compress(string root, string fullPath) {
         byte[] source = File.ReadAllBytes(fullPath);
-        byte[] compressed = LZ4Codec.EncodeHC(source, 0, source.Length);
+        byte[] compressed = Lz4Hc.Encode(source);
         int length = compressed.Length;
         string bundlePath = Path.GetRelativePath(root, fullPath).Replace('/', '\\').ToLowerInvariant();
         uint crc32 = Crc32.HashToUInt32(source);

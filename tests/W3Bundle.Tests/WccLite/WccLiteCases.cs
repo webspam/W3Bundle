@@ -1,8 +1,6 @@
-using LZ4;
-
 namespace W3Bundle.Tests.WccLite;
 
-sealed record WccLiteCase(string Name, Func<IEnumerable<(string RelativePath, byte[] Content)>> CreateFiles, bool KnownFailing = false) {
+sealed record WccLiteCase(string Name, Func<IEnumerable<(string RelativePath, byte[] Content)>> CreateFiles) {
     public void WriteTo(TempDirectory directory) {
         foreach (var (relativePath, content) in CreateFiles()) {
             directory.Write(relativePath, content);
@@ -15,9 +13,7 @@ sealed record WccLiteCase(string Name, Func<IEnumerable<(string RelativePath, by
 static class WccLiteCases {
     public static IReadOnlyList<WccLiteCase> All { get; } = [.. DerivationCases(), .. HoldoutCases()];
 
-    public static IEnumerable<string> Names() => All.Where(c => !c.KnownFailing).Select(c => c.Name);
-
-    public static IEnumerable<string> KnownFailingNames() => All.Where(c => c.KnownFailing).Select(c => c.Name);
+    public static IEnumerable<string> Names() => All.Select(c => c.Name);
 
     public static WccLiteCase Get(string name) => All.Single(c => c.Name == name);
 
@@ -53,7 +49,7 @@ static class WccLiteCases {
             var random = new Random(5678);
             _ = RawRandomFiles(random);
             return RawThresholdFiles(random);
-        }, KnownFailing: true);
+        });
 
         yield return new("empty-file", () => [("d\\a_empty.txt", []), ("d\\b_text.txt", TestData.Text(64, 1))]);
     }
@@ -87,7 +83,7 @@ static class WccLiteCases {
         for (int zeros = 0; zeros <= size; zeros++) {
             byte[] candidate = (byte[])noise.Clone();
             candidate.AsSpan(size - zeros).Clear();
-            int length = LZ4Codec.EncodeHC(candidate, 0, candidate.Length).Length;
+            int length = Lz4Hc.Encode(candidate).Length;
             if (length == target) return (candidate, length);
             if (Math.Abs(length - target) < Math.Abs(best.CompressedLength - target)) best = (candidate, length);
         }

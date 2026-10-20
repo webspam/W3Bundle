@@ -46,12 +46,6 @@ public sealed class WccLiteTests : IDisposable {
         Console.WriteLine($"[\"{caseName}\"] = new(\"{hashes.Bundle}\", {metadata}),");
     }
 
-    [Test]
-    [Category(KnownFailures.Category)]
-    [MethodDataSource(typeof(WccLiteCases), nameof(WccLiteCases.KnownFailingNames))]
-    public async Task KnownFailingCaseGenerationThrows(string caseName) =>
-        await Assert.That(() => WccLiteCases.Get(caseName).WriteTo(input)).Throws<InvalidOperationException>().WithMessageContaining(KnownFailures.Lz4NetCompressionCorrupted);
-
     WccLiteHashes ContentHashes() {
         string metadataPath = Path.Combine(content.Path, "metadata.store");
         return new(

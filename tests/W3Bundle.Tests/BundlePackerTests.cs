@@ -95,13 +95,17 @@ public sealed class BundlePackerTests : IDisposable {
     }
 
     [Test]
-    [Category(KnownFailures.Category)]
-    public async Task KnownFailingThrowsWhenLz4HcOutputIsCloseToTheBound() {
+    public async Task StoresRawWhenLz4HcOutputIsCloseToTheBound() {
         byte[] content = TestData.Noise(10000);
         content.AsSpan(content.Length - 14).Clear();
         source.Write("noise.bin", content);
 
-        await Assert.That(PackAndReadToc).Throws<AggregateException>().WithMessageContaining(KnownFailures.Lz4NetCompressionCorrupted);
+        var entry = PackAndReadToc().Single();
+
+        using (Assert.Multiple()) {
+            await Assert.That(entry.Compression).IsEqualTo(BundleFormat.CompressionNone);
+            await Assert.That(entry.CompressedSize).IsEqualTo(entry.Size);
+        }
     }
 
     [Test]
