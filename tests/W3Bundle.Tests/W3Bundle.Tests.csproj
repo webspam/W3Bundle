@@ -6,8 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CliWrap" Version="3.10.5" />
-    <PackageReference Include="TUnit" Version="1.*" />
+    <PackageReference Include="CliWrap" />
+    <PackageReference Include="TUnit" />
   </ItemGroup>
 
   <ItemGroup>

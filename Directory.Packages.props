@@ -1,0 +1,14 @@
+<Project>
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="CliWrap" Version="3.10.5" />
+    <PackageVersion Include="lz4net" Version="1.0.15.93" />
+    <PackageVersion Include="System.IO.Hashing" Version="10.0.0" />
+    <PackageVersion Include="TUnit" Version="1.75.0" />
+  </ItemGroup>
+
+</Project>
