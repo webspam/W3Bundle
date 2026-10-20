@@ -42,7 +42,14 @@ try {
             return 1;
     }
 }
-catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException or InvalidOperationException or NotSupportedException or UnauthorizedAccessException) {
+catch (Exception ex) when (
+    ex is IOException
+    or InvalidDataException
+    or ArgumentException
+    or InvalidOperationException
+    or NotSupportedException
+    or UnauthorizedAccessException
+) {
     Console.Error.WriteLine(ex.Message);
     return 1;
 }
