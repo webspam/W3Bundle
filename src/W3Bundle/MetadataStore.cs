@@ -102,7 +102,7 @@ public static class MetadataStore {
         }
 
         var hashes = files
-            .Select((f, i) => (Hash: Fnv1a64(f.Path), FileIndex: (uint)(i + 1)))
+            .Select((f, i) => (Hash: PathHash(f.Path), FileIndex: (uint)(i + 1)))
             .OrderBy(h => h.Hash)
             .ToArray();
         WriteCompressedInt(writer, hashes.Length);
@@ -133,10 +133,10 @@ public static class MetadataStore {
         return parent;
     }
 
-    static ulong Fnv1a64(string value) {
+    static ulong PathHash(string path) {
         ulong hash = FnvOffsetBasis;
-        foreach (char c in value) {
-            hash ^= (byte)c;
+        foreach (char c in path) {
+            hash ^= c is >= 'A' and <= 'Z' ? (byte)(c | 0x20) : (byte)c;
             hash *= FnvPrime;
         }
         return hash;

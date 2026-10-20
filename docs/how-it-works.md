@@ -26,7 +26,7 @@ All integers little-endian.
 
 | Offset | Type      | Value                                            |
 | ------ | --------- | ------------------------------------------------ |
-| 0x000  | char[256] | Path, backslash separated, lowercase, NUL padded |
+| 0x000  | char[256] | Path, backslash separated, original case, NUL padded |
 | 0x100  | byte[16]  | 0 (hash slot, unused by wcc_lite)                |
 | 0x110  | u32       | Data offset                                      |
 | 0x114  | u32       | 0                                                |
@@ -76,6 +76,12 @@ Files are listed in **data offset order**, 1-based (index 0 is an all-zero null 
 | Unknown          | 1 byte `0x80` (meaning unknown, copied from wcc_lite, possible terminator)                                                                           |
 | Directories      | count = D; 2 × u32: name string offset, parent index. Index 0 is root (`""`, parent 0). Order of first appearance walking files                      |
 | File directories | count = N; 3 × u32: file index, directory index, string offset of file name (inside the full path string)                                            |
-| Hashes           | count = N; u64 FNV-1a 64 of path, u32 file index, i32 `0` for file 1 and `-1` for all others (meaning unknown, copied from wcc_lite). Sorted by hash |
+| Hashes           | count = N; u64 path hash, u32 file index, i32 `0` for file 1 and `-1` for all others (meaning unknown, copied from wcc_lite). Sorted by hash     |
+
+Strings keep the original path case.
 
 String table order: `""`, bundle name, file paths (file order), `""` (root directory, not deduplicated), directory names (directory order).
+
+### Hashes
+
+- FNV-1a 64 over the path with ASCII `A-Z` lowercased only

@@ -66,7 +66,7 @@ public static class BundlePacker {
         byte[] source = File.ReadAllBytes(fullPath);
         byte[] compressed = Lz4Hc.Encode(source);
         int length = compressed.Length;
-        string bundlePath = Path.GetRelativePath(root, fullPath).Replace('/', '\\').ToLowerInvariant();
+        string bundlePath = Path.GetRelativePath(root, fullPath).Replace('/', '\\');
         uint crc32 = Crc32.HashToUInt32(source);
         return length < source.Length
             ? new PackedFile(bundlePath, compressed, length, (uint)source.Length, crc32, BundleFormat.CompressionLz4Hc)

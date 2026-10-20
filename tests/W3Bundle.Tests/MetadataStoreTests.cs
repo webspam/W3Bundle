@@ -108,6 +108,15 @@ public sealed class MetadataStoreTests : IDisposable {
     }
 
     [Test]
+    [Arguments("Dir\\f0.txt", 0x4a5f1cbd5b9e8c58UL)]
+    [Arguments("dir\\F0.TXT", 0x4a5f1cbd5b9e8c58UL)]
+    public async Task HashesPathWithAsciiLowercase(string path, ulong wccLiteHash) {
+        var store = Build(Entry(path, 0));
+
+        await Assert.That(store.Hashes.Single().Hash).IsEqualTo(wccLiteHash);
+    }
+
+    [Test]
     [Arguments(63)]
     [Arguments(64)]
     [Arguments(10000)]

@@ -11,7 +11,7 @@ sealed record WccLiteCase(string Name, Func<IEnumerable<(string RelativePath, by
 }
 
 static class WccLiteCases {
-    public static IReadOnlyList<WccLiteCase> All { get; } = [.. DerivationCases(), .. HoldoutCases()];
+    public static IReadOnlyList<WccLiteCase> All { get; } = [.. DerivationCases(), .. HoldoutCases(), .. PathAndBufferCases()];
 
     public static IEnumerable<string> Names() => All.Select(c => c.Name);
 
@@ -53,6 +53,16 @@ static class WccLiteCases {
 
         yield return new("empty-file", () => [("d\\a_empty.txt", []), ("d\\b_text.txt", TestData.Text(64, 1))]);
     }
+
+    static IEnumerable<WccLiteCase> PathAndBufferCases() {
+        yield return new("mixed-case", () => [
+            .. Filler(),
+            ("d\\Mixed_OLD.txt", TestData.Text(128, 100)),
+            ("Upper\\Sub\\File.TXT", TestData.Text(128, 101)),
+        ]);
+    }
+
+    static IEnumerable<(string, byte[])> Filler() => Enumerable.Range(0, 6).Select(i => ($"d\\f{i:D3}.txt", TestData.Text(128, i)));
 
     static WccLiteCase CountCase(int n) =>
         new($"count-{n:D4}", () => Enumerable.Range(0, n).Select(i => ($"d\\f{i:D4}.txt", TestData.Text(64, i))));

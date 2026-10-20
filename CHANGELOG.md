@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Paths keep their original case, as wcc_lite does. `metadata.store` hashes are still case-insensitive (ASCII only)
+
 ## 0.1.0
 
 - Initial release

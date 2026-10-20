@@ -37,12 +37,12 @@ public sealed class BundlePackerTests : IDisposable {
     }
 
     [Test]
-    public async Task StoresLowercaseBackslashSeparatedPaths() {
-        source.Write("Dir/Sub/File.TXT", TestData.Text(64));
+    public async Task StoresOriginalCaseBackslashSeparatedPaths() {
+        source.Write("Dir/Sub/File_OLD.TXT", TestData.Text(64));
 
         var entries = PackAndReadToc();
 
-        await Assert.That(entries.Single().Path).IsEqualTo(@"dir\sub\file.txt");
+        await Assert.That(entries.Single().Path).IsEqualTo(@"Dir\Sub\File_OLD.TXT");
     }
 
     [Test]
@@ -53,7 +53,7 @@ public sealed class BundlePackerTests : IDisposable {
 
         var paths = PackAndReadToc().Select(e => e.Path);
 
-        await Assert.That(paths).IsEquivalentTo([@"a.txt", @"b.txt", @"_x.txt", @"a\c.txt", @"b\d.txt"], CollectionOrdering.Matching);
+        await Assert.That(paths).IsEquivalentTo([@"A.txt", @"b.txt", @"_x.txt", @"a\c.txt", @"B\d.txt"], CollectionOrdering.Matching);
     }
 
     [Test]
