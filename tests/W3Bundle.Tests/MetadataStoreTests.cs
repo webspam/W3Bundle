@@ -5,7 +5,8 @@ using TUnit.Assertions.Enums;
 namespace W3Bundle.Tests;
 
 public sealed class MetadataStoreTests : IDisposable {
-    const string BundleName = "blob0.bundle";
+    const string BundleName = BundleFormat.BlobBundleName;
+    const string BuffersBundleName = BundleFormat.BuffersBundleName;
 
     readonly TempDirectory source = new();
     readonly TempDirectory content = new();
@@ -38,7 +39,7 @@ public sealed class MetadataStoreTests : IDisposable {
         using (Assert.Multiple()) {
             await Assert.That(store.Files.Skip(1).Select(f => store.StringAt(f.PathOffset))).IsEquivalentTo(["first.txt", "second.txt"], CollectionOrdering.Matching);
             await Assert.That(store.Entries.Skip(1).Select(e => e.Offset)).IsInOrder();
-            await Assert.That(store.Files[0]).IsEqualTo(new StoredFile(0, 0, 0, 0, 0));
+            await Assert.That(store.Files[0]).IsEqualTo(new StoredFile(0, 0, 0, 0, 0, 0, 0));
             await Assert.That(store.Entries[0]).IsEqualTo(new StoredEntry(0, 0, 0, 0));
             for (uint i = 1; i < store.Files.Length; i++) {
                 await Assert.That(store.Files[i].FirstEntry).IsEqualTo(i);
@@ -59,7 +60,7 @@ public sealed class MetadataStoreTests : IDisposable {
             await Assert.That(store.Bundles[0]).IsEqualTo(new StoredBundle(0, 0, 0, 0, 0));
             await Assert.That(store.Bundles[1] with { NameOffset = 0 }).IsEqualTo(new StoredBundle(alignedBundleSize - dataStart, dataStart, 0, 1, 3));
             await Assert.That(store.StringAt(store.Bundles[1].NameOffset)).IsEqualTo(BundleName);
-            await Assert.That(store.UnknownByte).IsEqualTo((byte)0x80);
+            await Assert.That(store.Buffers).IsEmpty();
         }
     }
 
@@ -162,6 +163,60 @@ public sealed class MetadataStoreTests : IDisposable {
     }
 
     [Test]
+    public async Task ListsBufferFilesAfterBlobFilesWithBufferBundleRecord() {
+        var store = BuildWithBuffers();
+        uint buffersDataStart = BundleFormat.HeaderSize + 3 * BundleFormat.TocEntrySize;
+
+        using (Assert.Multiple()) {
+            await Assert.That(Strings(store)).IsEquivalentTo(
+                ["", BundleName, @"d\m.w2mesh", @"d\n.w2mesh", @"d\plain.txt", BuffersBundleName, @"d\m.w2mesh.1.buffer", @"d\n.w2mesh.10.buffer", @"d\n.w2mesh.2.buffer", "", "d"],
+                CollectionOrdering.Matching);
+            await Assert.That(store.Entries.Skip(1).Select(e => e.Bundle)).IsEquivalentTo([1u, 1u, 1u, 2u, 2u, 2u], CollectionOrdering.Matching);
+            await Assert.That(store.Bundles[2] with { NameOffset = 0 }).IsEqualTo(new StoredBundle(0, buffersDataStart, 0, 4, 3));
+            await Assert.That(store.StringAt(store.Bundles[2].NameOffset)).IsEqualTo(BuffersBundleName);
+        }
+    }
+
+    [Test]
+    public async Task IndexesBuffersByIdWithGaps() {
+        var store = BuildWithBuffers();
+        const uint missing = uint.MaxValue;
+
+        using (Assert.Multiple()) {
+            await Assert.That(store.Files.Skip(1).Select(f => (f.FirstBuffer, f.BufferCount))).IsEquivalentTo(
+                [(0u, 1u), (1u, 10u), (0u, 0u), (0u, 0u), (0u, 0u), (0u, 0u)],
+                CollectionOrdering.Matching);
+            await Assert.That(store.Buffers).IsEquivalentTo(
+                [4u, missing, 6u, missing, missing, missing, missing, missing, missing, missing, 5u],
+                CollectionOrdering.Matching);
+        }
+    }
+
+    [Test]
+    public async Task OmitsBufferFilesFromDirectoriesAndHashes() {
+        var store = BuildWithBuffers();
+
+        using (Assert.Multiple()) {
+            await Assert.That(store.FileDirectories.Select(f => f.File)).IsEquivalentTo([1u, 2u, 3u], CollectionOrdering.Matching);
+            await Assert.That(store.Hashes.Select(h => h.File)).IsEquivalentTo([1u, 2u, 3u]);
+            await Assert.That(store.Hashes).All(h => h.Unknown == 0);
+        }
+    }
+
+    [Test]
+    [Arguments(@"d\odd.buffer", @"Buffer file without a number (path = 'd\odd.buffer')")]
+    [Arguments(@"d\m.w2mesh.x.buffer", @"Buffer file without a number (path = 'd\m.w2mesh.x.buffer')")]
+    [Arguments(@"d\ghost.w2mesh.1.buffer", @"No master file for buffer 'd\ghost.w2mesh.1.buffer'")]
+    public async Task RejectsBuffersWithoutIdOrMaster(string bufferPath, string message) {
+        BundleToc[] bundles = [
+            new(BundleName, 0x100000, [Entry(@"d\m.w2mesh", 0)]),
+            new(BuffersBundleName, 0x100000, [Entry(bufferPath, 0)]),
+        ];
+
+        await Assert.That(() => MetadataStore.Build(bundles)).Throws<InvalidDataException>().WithMessage(message);
+    }
+
+    [Test]
     public async Task GenerateWritesStoreForPackedBundle() {
         source.Write(@"d\a.txt", TestData.Text(1000));
         source.Write(@"d\b.bin", TestData.Noise(100));
@@ -182,7 +237,10 @@ public sealed class MetadataStoreTests : IDisposable {
 
         var store = MetadataStoreReader.Parse(File.ReadAllBytes(MetadataStore.Generate(content.Path)));
 
-        await Assert.That(store.Bundles.Skip(1).Select(b => store.StringAt(b.NameOffset))).IsEquivalentTo([BundleName, BundleFormat.BuffersBundleName], CollectionOrdering.Matching);
+        using (Assert.Multiple()) {
+            await Assert.That(store.Bundles.Skip(1).Select(b => store.StringAt(b.NameOffset))).IsEquivalentTo([BundleName, BuffersBundleName], CollectionOrdering.Matching);
+            await Assert.That(store.Buffers).IsEquivalentTo([2u]);
+        }
     }
 
     [Test]
@@ -202,6 +260,10 @@ public sealed class MetadataStoreTests : IDisposable {
     public async Task GenerateRequiresABundle() {
         await Assert.That(() => MetadataStore.Generate(content.Path)).Throws<NotSupportedException>();
     }
+
+    static ParsedMetadataStore BuildWithBuffers() => Build(
+        new BundleToc(BundleName, 0x100000, [Entry(@"d\m.w2mesh", 0), Entry(@"d\n.w2mesh", 1), Entry(@"d\plain.txt", 2)]),
+        new BundleToc(BuffersBundleName, 0x100000, [Entry(@"d\m.w2mesh.1.buffer", 0), Entry(@"d\n.w2mesh.10.buffer", 1), Entry(@"d\n.w2mesh.2.buffer", 2)]));
 
     static string[] Strings(ParsedMetadataStore store) => Encoding.UTF8.GetString(store.Strings).TrimEnd('\0').Split('\0');
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace W3Bundle;
@@ -5,11 +6,13 @@ namespace W3Bundle;
 public static class MetadataStore {
     const uint Magic = 0x4D545603;
     const uint Version = 7;
-    const byte BundlesTerminator = 0x80;
+    const uint MissingBuffer = uint.MaxValue;
     const ulong FnvOffsetBasis = 0xcbf29ce484222325;
     const ulong FnvPrime = 0x100000001b3;
 
-    sealed record StoredFile(BundleEntry Entry, uint BundleIndex, uint FileIndex);
+    sealed record StoredFile(BundleEntry Entry, uint BundleIndex, uint FileIndex) {
+        public bool IsBuffer => BundleFormat.IsBuffer(Entry.Path);
+    }
 
     public static string Generate(string contentDirectory) {
         var bundles = Directory.GetFiles(contentDirectory, "*.bundle")
@@ -33,6 +36,7 @@ public static class MetadataStore {
             .SelectMany((bundle, bundleIndex) => bundle.Entries.OrderBy(e => e.Offset).Select(entry => (Entry: entry, BundleIndex: (uint)(bundleIndex + 1))))
             .Select((f, i) => new StoredFile(f.Entry, f.BundleIndex, (uint)(i + 1)))
             .ToArray();
+        var masterFiles = files.Where(f => !f.IsBuffer).ToArray();
 
         var strings = new StringTable();
         strings.Add("");
@@ -47,9 +51,11 @@ public static class MetadataStore {
         }
 
         var directories = new DirectoryTree();
-        var fileDirectories = files.ToDictionary(f => f.FileIndex, f => directories.Resolve(f.Entry.Path));
+        var fileDirectories = masterFiles.ToDictionary(f => f.FileIndex, f => directories.Resolve(f.Entry.Path));
         var directoryList = directories.InDepthFirstOrder();
         var directoryNameOffsets = directoryList.Select(d => strings.Add(d.Name)).ToArray();
+
+        var buffers = BufferTable.Build(files);
 
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
@@ -65,13 +71,14 @@ public static class MetadataStore {
         WriteCompressedInt(writer, files.Length + 1);
         writer.Write(new byte[32]);
         foreach (var file in files) {
+            var (firstBuffer, bufferCount) = buffers.RangeOf(file.FileIndex);
             writer.Write(pathOffsets[file.FileIndex - 1]);
             writer.Write(0u);
             writer.Write(file.Entry.CompressedSize);
             writer.Write(file.Entry.Size);
             writer.Write(file.FileIndex);
-            writer.Write(0u);
-            writer.Write(0u);
+            writer.Write(firstBuffer);
+            writer.Write(bufferCount);
             writer.Write(file.Entry.Compression);
         }
 
@@ -92,7 +99,7 @@ public static class MetadataStore {
         for (int b = 0; b < bundles.Count; b++) {
             var bundle = bundles[b];
             uint dataStart = BundleFormat.HeaderSize + (uint)(bundle.Entries.Count * BundleFormat.TocEntrySize);
-            writer.Write(bundle.AlignedBundleSize - dataStart);
+            writer.Write(BundleFormat.IsBuffersBundle(bundle.Name) ? 0u : bundle.AlignedBundleSize - dataStart);
             writer.Write(0u);
             writer.Write(dataStart);
             writer.Write(bundleNameOffsets[b]);
@@ -100,7 +107,11 @@ public static class MetadataStore {
             writer.Write((uint)bundle.Entries.Count);
             firstFile += (uint)bundle.Entries.Count;
         }
-        writer.Write(BundlesTerminator);
+
+        WriteCompressedInt(writer, buffers.Slots.Count);
+        foreach (uint slot in buffers.Slots) {
+            writer.Write(slot);
+        }
 
         WriteCompressedInt(writer, directoryList.Count);
         for (int i = 0; i < directoryList.Count; i++) {
@@ -108,8 +119,8 @@ public static class MetadataStore {
             writer.Write((uint)(directoryList[i].Parent?.Index ?? 0));
         }
 
-        WriteCompressedInt(writer, files.Length);
-        foreach (var file in files) {
+        WriteCompressedInt(writer, masterFiles.Length);
+        foreach (var file in masterFiles) {
             string path = file.Entry.Path;
             int nameStart = Encoding.UTF8.GetByteCount(path.AsSpan(0, path.LastIndexOf('\\') + 1));
             writer.Write(file.FileIndex);
@@ -117,7 +128,7 @@ public static class MetadataStore {
             writer.Write(pathOffsets[file.FileIndex - 1] + (uint)nameStart);
         }
 
-        var hashes = files
+        var hashes = masterFiles
             .Select(f => (Hash: PathHash(f.Entry.Path), f.FileIndex))
             .OrderBy(h => h.Hash)
             .ToArray();
@@ -125,11 +136,69 @@ public static class MetadataStore {
         foreach (var (hash, fileIndex) in hashes) {
             writer.Write(hash);
             writer.Write(fileIndex);
-            writer.Write(fileIndex == 1 ? 0 : -1);
+            writer.Write(buffers.Slots.Count > 0 || fileIndex == 1 ? 0 : -1);
         }
 
         writer.Flush();
         return stream.ToArray();
+    }
+
+    sealed class BufferTable {
+        readonly Dictionary<uint, (uint First, uint Count)> ranges = [];
+
+        public List<uint> Slots { get; } = [];
+
+        public (uint First, uint Count) RangeOf(uint fileIndex) => ranges.GetValueOrDefault(fileIndex);
+
+        public static BufferTable Build(IReadOnlyList<StoredFile> files) {
+            var masterIndex = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+            foreach (var file in files.Where(f => !f.IsBuffer)) {
+                masterIndex.TryAdd(file.Entry.Path, file.FileIndex);
+            }
+
+            var errors = new List<string>();
+            var buffersByMaster = new Dictionary<uint, List<(uint Id, uint FileIndex)>>();
+            foreach (var file in files.Where(f => f.IsBuffer)) {
+                string path = file.Entry.Path;
+                if (!TryParseBufferPath(path, out string master, out uint id)) {
+                    errors.Add($"Buffer file without a number (path = '{path}')");
+                    continue;
+                }
+                if (!masterIndex.TryGetValue(master, out uint masterFileIndex)) {
+                    errors.Add($"No master file for buffer '{path}'");
+                    continue;
+                }
+                if (!buffersByMaster.TryGetValue(masterFileIndex, out var masterBuffers)) {
+                    buffersByMaster[masterFileIndex] = masterBuffers = [];
+                }
+                masterBuffers.Add((id, file.FileIndex));
+            }
+            if (errors.Count > 0) {
+                throw new InvalidDataException(string.Join(Environment.NewLine, errors));
+            }
+
+            var table = new BufferTable();
+            foreach (var (masterFileIndex, masterBuffers) in buffersByMaster.OrderBy(kv => kv.Key)) {
+                uint count = masterBuffers.Max(b => b.Id);
+                int first = table.Slots.Count;
+                table.Slots.AddRange(Enumerable.Repeat(MissingBuffer, (int)count));
+                foreach (var (id, fileIndex) in masterBuffers) {
+                    table.Slots[first + (int)id - 1] = fileIndex;
+                }
+                table.ranges[masterFileIndex] = ((uint)first, count);
+            }
+            return table;
+        }
+
+        static bool TryParseBufferPath(string path, out string master, out uint id) {
+            string withoutExtension = path[..path.LastIndexOf('.')];
+            int separator = withoutExtension.LastIndexOf('.');
+            master = separator < 0 ? "" : withoutExtension[..separator];
+            id = 0;
+            return separator >= 0
+                && uint.TryParse(withoutExtension.AsSpan(separator + 1), NumberStyles.None, CultureInfo.InvariantCulture, out id)
+                && id > 0;
+        }
     }
 
     sealed class DirectoryNode(string name, DirectoryNode? parent) {
@@ -184,6 +253,10 @@ public static class MetadataStore {
 
     static void WriteCompressedInt(BinaryWriter writer, int value) {
         ArgumentOutOfRangeException.ThrowIfNegative(value);
+        if (value == 0) {
+            writer.Write((byte)0x80);
+            return;
+        }
         uint remaining = (uint)value;
         byte first = (byte)(remaining & 0x3F);
         remaining >>= 6;

@@ -20,6 +20,8 @@ public static class BundleFormat {
 
     public static bool IsBuffer(string path) => path.EndsWith(BufferExtension, StringComparison.OrdinalIgnoreCase);
 
+    public static bool IsBuffersBundle(string bundleName) => bundleName.StartsWith("buffers", StringComparison.OrdinalIgnoreCase);
+
     public static void WriteHeader(Span<byte> header, uint alignedBundleSize, uint tocSize) {
         header.Clear();
         Magic.CopyTo(header);

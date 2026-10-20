@@ -7,6 +7,8 @@
 - `metadatastore` directory table order now matches wcc_lite for nested trees
 - `*.buffer` files are packed into `buffers0.bundle`
 - `metadatastore` reads every `.bundle` in the directory
+- `metadatastore` writes the buffer table, matching wcc_lite for `buffers0.bundle`
+- `metadatastore` fails, like wcc_lite, on a buffer without an id or without a master file
 
 ## 0.1.0
 
