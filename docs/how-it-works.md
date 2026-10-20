@@ -6,7 +6,16 @@ wcc_lite's output is consistent with a pre-1.8 LZ4HC. [lz4net](https://www.nuget
 
 Modern LZ4HC (K4os, any level) did not: it allows a final match at `iend - MFLIMIT`, and resolves overlapping matches differently.
 
-## Bundle format (`blob0.bundle`)
+## Bundles
+
+| Bundle            | Contents                                    |
+| ----------------- | ------------------------------------------- |
+| `blob0.bundle`    | Every file except `*.buffer`                |
+| `buffers0.bundle` | `*.buffer` files. Omitted when there are none |
+
+Both use the same format, TOC order and data order rules, independently.
+
+## Bundle format
 
 All integers little-endian.
 

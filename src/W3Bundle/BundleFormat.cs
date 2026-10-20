@@ -11,9 +11,14 @@ public static class BundleFormat {
     public const uint CompressionNone = 0;
     public const uint CompressionLz4Hc = 5;
     public const int DataAlignment = 16;
+    public const string BlobBundleName = "blob0.bundle";
+    public const string BuffersBundleName = "buffers0.bundle";
+    const string BufferExtension = ".buffer";
     const ushort HeaderVersion = 5;
 
     public static uint Align(uint value) => (value + DataAlignment - 1) & ~(uint)(DataAlignment - 1);
+
+    public static bool IsBuffer(string path) => path.EndsWith(BufferExtension, StringComparison.OrdinalIgnoreCase);
 
     public static void WriteHeader(Span<byte> header, uint alignedBundleSize, uint tocSize) {
         header.Clear();

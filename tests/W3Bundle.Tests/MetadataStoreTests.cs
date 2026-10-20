@@ -165,7 +165,7 @@ public sealed class MetadataStoreTests : IDisposable {
     public async Task GenerateWritesStoreForPackedBundle() {
         source.Write(@"d\a.txt", TestData.Text(1000));
         source.Write(@"d\b.bin", TestData.Noise(100));
-        string bundlePath = BundlePacker.Pack(source.Path, content.Path);
+        string bundlePath = BundlePacker.Pack(source.Path, content.Path).Single();
 
         string storePath = MetadataStore.Generate(content.Path);
 

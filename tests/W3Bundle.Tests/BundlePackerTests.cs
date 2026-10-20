@@ -67,6 +67,30 @@ public sealed class BundlePackerTests : IDisposable {
     }
 
     [Test]
+    public async Task WritesBufferFilesToSeparateBundle() {
+        source.Write(@"d\m.w2mesh", TestData.Text(64));
+        source.Write(@"d\m.w2mesh.1.buffer", TestData.Text(64, 1));
+        source.Write(@"d\m.w2mesh.2.BUFFER", TestData.Text(64, 2));
+
+        var bundles = BundlePacker.Pack(source.Path, output.Path);
+
+        using (Assert.Multiple()) {
+            await Assert.That(bundles.Select(b => Path.GetFileName(b))).IsEquivalentTo([BundleFormat.BlobBundleName, BundleFormat.BuffersBundleName], CollectionOrdering.Matching);
+            await Assert.That(BundleFormat.ReadToc(bundles[0]).Entries.Select(e => e.Path)).IsEquivalentTo([@"d\m.w2mesh"]);
+            await Assert.That(BundleFormat.ReadToc(bundles[1]).Entries.Select(e => e.Path)).IsEquivalentTo([@"d\m.w2mesh.1.buffer", @"d\m.w2mesh.2.BUFFER"], CollectionOrdering.Matching);
+        }
+    }
+
+    [Test]
+    public async Task OmitsBuffersBundleWithoutBufferFiles() {
+        source.Write("a.txt", TestData.Text(64));
+
+        var bundles = BundlePacker.Pack(source.Path, output.Path);
+
+        await Assert.That(bundles.Select(b => Path.GetFileName(b))).IsEquivalentTo([BundleFormat.BlobBundleName]);
+    }
+
+    [Test]
     public async Task OrdersTocFilesBeforeSubdirectoriesIgnoringCase() {
         foreach (string path in new[] { "b.txt", "A.txt", "_x.txt", "B/d.txt", "a/c.txt" }) {
             source.Write(path, TestData.Text(64));
@@ -196,7 +220,7 @@ public sealed class BundlePackerTests : IDisposable {
         await Assert.That(() => BundlePacker.Pack(source.Path, output.Path)).Throws<InvalidOperationException>();
     }
 
-    string Pack() => BundlePacker.Pack(source.Path, output.Path);
+    string Pack() => BundlePacker.Pack(source.Path, output.Path).Single();
 
     List<BundleEntry> PackAndReadToc() => BundleFormat.ReadToc(Pack()).Entries;
 
