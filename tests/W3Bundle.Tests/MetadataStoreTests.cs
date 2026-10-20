@@ -51,7 +51,7 @@ public sealed class MetadataStoreTests : IDisposable {
     [Test]
     public async Task WritesSingleBundleRecord() {
         const uint alignedBundleSize = 0x1000;
-        var store = Build(alignedBundleSize, Entry("a.txt", 0), Entry("b.txt", 1), Entry("c.txt", 2));
+        var store = Build(new BundleToc(BundleName, alignedBundleSize, [Entry("a.txt", 0), Entry("b.txt", 1), Entry("c.txt", 2)]));
         uint dataStart = BundleFormat.HeaderSize + 3 * BundleFormat.TocEntrySize;
 
         using (Assert.Multiple()) {
@@ -170,18 +170,36 @@ public sealed class MetadataStoreTests : IDisposable {
         string storePath = MetadataStore.Generate(content.Path);
 
         var (alignedBundleSize, entries) = BundleFormat.ReadToc(bundlePath);
-        byte[] expected = MetadataStore.Build(BundleName, alignedBundleSize, entries);
+        byte[] expected = MetadataStore.Build([new BundleToc(BundleName, alignedBundleSize, entries)]);
         await Assert.That(File.ReadAllBytes(storePath)).IsEquivalentTo(expected, CollectionOrdering.Matching);
     }
 
     [Test]
-    [Arguments(0)]
-    [Arguments(2)]
-    public async Task GenerateRequiresExactlyOneBundle(int bundleCount) {
-        for (int i = 0; i < bundleCount; i++) {
-            content.Write($"blob{i}.bundle", []);
-        }
+    public async Task GenerateReadsEveryBundleInDirectory() {
+        source.Write(@"d\m.w2mesh", TestData.Text(1000));
+        source.Write(@"d\m.w2mesh.1.buffer", TestData.Noise(100));
+        BundlePacker.Pack(source.Path, content.Path);
 
+        var store = MetadataStoreReader.Parse(File.ReadAllBytes(MetadataStore.Generate(content.Path)));
+
+        await Assert.That(store.Bundles.Skip(1).Select(b => store.StringAt(b.NameOffset))).IsEquivalentTo([BundleName, BundleFormat.BuffersBundleName], CollectionOrdering.Matching);
+    }
+
+    [Test]
+    public async Task ListsFilesBundleByBundle() {
+        var store = Build(
+            new BundleToc("a.bundle", 0x100000, [Entry("a2.txt", 1), Entry("a1.txt", 0)]),
+            new BundleToc("b.bundle", 0x100000, [Entry("b1.txt", 0)]));
+
+        using (Assert.Multiple()) {
+            await Assert.That(Strings(store)).IsEquivalentTo(["", "a.bundle", "a1.txt", "a2.txt", "b.bundle", "b1.txt"], CollectionOrdering.Matching);
+            await Assert.That(store.Entries.Skip(1).Select(e => e.Bundle)).IsEquivalentTo([1u, 1u, 2u], CollectionOrdering.Matching);
+            await Assert.That(store.Bundles.Skip(1).Select(b => (b.FirstFile, b.FileCount))).IsEquivalentTo([(1u, 2u), (3u, 1u)], CollectionOrdering.Matching);
+        }
+    }
+
+    [Test]
+    public async Task GenerateRequiresABundle() {
         await Assert.That(() => MetadataStore.Generate(content.Path)).Throws<NotSupportedException>();
     }
 
@@ -190,8 +208,8 @@ public sealed class MetadataStoreTests : IDisposable {
     static BundleEntry Entry(string path, int dataIndex, uint size = 64, uint compressedSize = 32, uint compression = BundleFormat.CompressionLz4Hc) =>
         new(path, 0x10000 + (uint)dataIndex * 0x100, size, compressedSize, 0, compression);
 
-    static ParsedMetadataStore Build(params BundleEntry[] tocEntries) => Build(0x100000, tocEntries);
+    static ParsedMetadataStore Build(params BundleEntry[] tocEntries) => Build(new BundleToc(BundleName, 0x100000, tocEntries));
 
-    static ParsedMetadataStore Build(uint alignedBundleSize, params BundleEntry[] tocEntries) =>
-        MetadataStoreReader.Parse(MetadataStore.Build(BundleName, alignedBundleSize, tocEntries));
+    static ParsedMetadataStore Build(params BundleToc[] bundles) =>
+        MetadataStoreReader.Parse(MetadataStore.Build(bundles));
 }

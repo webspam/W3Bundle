@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using System.Text;
 
 namespace W3Bundle;
@@ -10,30 +9,45 @@ public static class MetadataStore {
     const ulong FnvOffsetBasis = 0xcbf29ce484222325;
     const ulong FnvPrime = 0x100000001b3;
 
+    sealed record StoredFile(BundleEntry Entry, uint BundleIndex, uint FileIndex);
+
     public static string Generate(string contentDirectory) {
-        string[] bundlePaths = Directory.GetFiles(contentDirectory, "*.bundle");
-        if (bundlePaths.Length != 1) {
-            throw new NotSupportedException($"Expected exactly one .bundle in {contentDirectory}, found {bundlePaths.Length}");
+        var bundles = Directory.GetFiles(contentDirectory, "*.bundle")
+            .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+            .Select(path => {
+                var (alignedBundleSize, entries) = BundleFormat.ReadToc(path);
+                return new BundleToc(Path.GetFileName(path), alignedBundleSize, entries);
+            })
+            .ToArray();
+        if (bundles.Length == 0) {
+            throw new NotSupportedException($"No .bundle files in {contentDirectory}");
         }
-        string bundlePath = bundlePaths[0];
-        var (alignedBundleSize, entries) = BundleFormat.ReadToc(bundlePath);
-        byte[] store = Build(Path.GetFileName(bundlePath), alignedBundleSize, entries);
+        byte[] store = Build(bundles);
         string outputPath = Path.Combine(contentDirectory, "metadata.store");
         File.WriteAllBytes(outputPath, store);
         return outputPath;
     }
 
-    public static byte[] Build(string bundleName, uint alignedBundleSize, IReadOnlyList<BundleEntry> tocEntries) {
-        var files = tocEntries.OrderBy(e => e.Offset).ToArray();
-        uint dataStart = BundleFormat.HeaderSize + (uint)(tocEntries.Count * BundleFormat.TocEntrySize);
+    public static byte[] Build(IReadOnlyList<BundleToc> bundles) {
+        var files = bundles
+            .SelectMany((bundle, bundleIndex) => bundle.Entries.OrderBy(e => e.Offset).Select(entry => (Entry: entry, BundleIndex: (uint)(bundleIndex + 1))))
+            .Select((f, i) => new StoredFile(f.Entry, f.BundleIndex, (uint)(i + 1)))
+            .ToArray();
 
         var strings = new StringTable();
         strings.Add("");
-        uint bundleNameOffset = strings.Add(bundleName);
-        var pathOffsets = files.Select(f => strings.Add(f.Path)).ToArray();
+        var bundleNameOffsets = new uint[bundles.Count];
+        var pathOffsets = new uint[files.Length];
+        int fileCursor = 0;
+        for (int b = 0; b < bundles.Count; b++) {
+            bundleNameOffsets[b] = strings.Add(bundles[b].Name);
+            for (int i = 0; i < bundles[b].Entries.Count; i++, fileCursor++) {
+                pathOffsets[fileCursor] = strings.Add(files[fileCursor].Entry.Path);
+            }
+        }
 
         var directories = new DirectoryTree();
-        var fileDirectories = files.Select(f => directories.Resolve(f.Path)).ToArray();
+        var fileDirectories = files.ToDictionary(f => f.FileIndex, f => directories.Resolve(f.Entry.Path));
         var directoryList = directories.InDepthFirstOrder();
         var directoryNameOffsets = directoryList.Select(d => strings.Add(d.Name)).ToArray();
 
@@ -41,8 +55,8 @@ public static class MetadataStore {
         using var writer = new BinaryWriter(stream);
         writer.Write(Magic);
         writer.Write(Version);
-        writer.Write(files.Max(f => f.CompressedSize));
-        writer.Write(files.Max(f => f.Size));
+        writer.Write(files.Max(f => f.Entry.CompressedSize));
+        writer.Write(files.Max(f => f.Entry.Size));
 
         byte[] stringBytes = strings.ToArray();
         WriteCompressedInt(writer, stringBytes.Length);
@@ -50,38 +64,42 @@ public static class MetadataStore {
 
         WriteCompressedInt(writer, files.Length + 1);
         writer.Write(new byte[32]);
-        for (int i = 0; i < files.Length; i++) {
-            var file = files[i];
-            writer.Write(pathOffsets[i]);
+        foreach (var file in files) {
+            writer.Write(pathOffsets[file.FileIndex - 1]);
             writer.Write(0u);
-            writer.Write(file.CompressedSize);
-            writer.Write(file.Size);
-            writer.Write((uint)(i + 1));
+            writer.Write(file.Entry.CompressedSize);
+            writer.Write(file.Entry.Size);
+            writer.Write(file.FileIndex);
             writer.Write(0u);
             writer.Write(0u);
-            writer.Write(file.Compression);
+            writer.Write(file.Entry.Compression);
         }
 
         WriteCompressedInt(writer, files.Length + 1);
         writer.Write(new byte[24]);
-        for (int i = 0; i < files.Length; i++) {
-            var file = files[i];
-            writer.Write(file.Offset);
+        foreach (var file in files) {
+            writer.Write(file.Entry.Offset);
             writer.Write(0u);
-            writer.Write(file.CompressedSize);
+            writer.Write(file.Entry.CompressedSize);
             writer.Write(0u);
-            writer.Write((uint)(i + 1));
-            writer.Write(1u);
+            writer.Write(file.FileIndex);
+            writer.Write(file.BundleIndex);
         }
 
-        WriteCompressedInt(writer, 2);
+        WriteCompressedInt(writer, bundles.Count + 1);
         writer.Write(new byte[24]);
-        writer.Write(alignedBundleSize - dataStart);
-        writer.Write(0u);
-        writer.Write(dataStart);
-        writer.Write(bundleNameOffset);
-        writer.Write(1u);
-        writer.Write((uint)files.Length);
+        uint firstFile = 1;
+        for (int b = 0; b < bundles.Count; b++) {
+            var bundle = bundles[b];
+            uint dataStart = BundleFormat.HeaderSize + (uint)(bundle.Entries.Count * BundleFormat.TocEntrySize);
+            writer.Write(bundle.AlignedBundleSize - dataStart);
+            writer.Write(0u);
+            writer.Write(dataStart);
+            writer.Write(bundleNameOffsets[b]);
+            writer.Write(firstFile);
+            writer.Write((uint)bundle.Entries.Count);
+            firstFile += (uint)bundle.Entries.Count;
+        }
         writer.Write(BundlesTerminator);
 
         WriteCompressedInt(writer, directoryList.Count);
@@ -91,16 +109,16 @@ public static class MetadataStore {
         }
 
         WriteCompressedInt(writer, files.Length);
-        for (int i = 0; i < files.Length; i++) {
-            string path = files[i].Path;
+        foreach (var file in files) {
+            string path = file.Entry.Path;
             int nameStart = Encoding.UTF8.GetByteCount(path.AsSpan(0, path.LastIndexOf('\\') + 1));
-            writer.Write((uint)(i + 1));
-            writer.Write((uint)fileDirectories[i].Index);
-            writer.Write(pathOffsets[i] + (uint)nameStart);
+            writer.Write(file.FileIndex);
+            writer.Write((uint)fileDirectories[file.FileIndex].Index);
+            writer.Write(pathOffsets[file.FileIndex - 1] + (uint)nameStart);
         }
 
         var hashes = files
-            .Select((f, i) => (Hash: PathHash(f.Path), FileIndex: (uint)(i + 1)))
+            .Select(f => (Hash: PathHash(f.Entry.Path), f.FileIndex))
             .OrderBy(h => h.Hash)
             .ToArray();
         WriteCompressedInt(writer, hashes.Length);

@@ -6,6 +6,7 @@
 - Non-ASCII paths are stored as UTF-8 instead of `?`
 - `metadatastore` directory table order now matches wcc_lite for nested trees
 - `*.buffer` files are packed into `buffers0.bundle`
+- `metadatastore` reads every `.bundle` in the directory
 
 ## 0.1.0
 

@@ -73,15 +73,15 @@ static IEnumerable<int> Order(int[] tocIndices) {
 
 Arrays are prefixed with a CR2W-style compressed count: first byte `bit7` sign, `bit6` continue, 6 value bits; following bytes `bit7` continue, 7 value bits.
 
-Files are listed in **data offset order**, 1-based (index 0 is an all-zero null record).
+Bundles are read in name order (`blob0.bundle`, `buffers0.bundle`). Files are listed bundle by bundle, each in **data offset order**, 1-based (index 0 is an all-zero null record).
 
 | Section          | Layout                                                                                                                                               |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Header           | u32 magic `0x4D545603` (`\x03VTM`), u32 version 7, u32 max compressed size, u32 max uncompressed size                                                |
 | Strings          | count = byte length; NUL-terminated strings                                                                                                          |
 | Files            | count = N + 1; 8 × u32: path string offset, 0, compressed size, uncompressed size, first entry index (= file index), 0, 0, compression               |
-| Entries          | count = N + 1; 6 × u32: data offset, 0, compressed size, 0, file index, bundle index (1)                                                             |
-| Bundles          | count = 2; 6 × u32: data block size (aligned bundle size − data start), 0, data start, name string offset, first file (1), file count                |
+| Entries          | count = N + 1; 6 × u32: data offset, 0, compressed size, 0, file index, bundle index                                                                 |
+| Bundles          | count = bundles + 1; 6 × u32: data block size (aligned bundle size − data start), 0, data start, name string offset, first file, file count          |
 | Unknown          | 1 byte `0x80` (meaning unknown, copied from wcc_lite, possible terminator)                                                                           |
 | Directories      | count = D; 2 × u32: name string offset, parent index. Index 0 is root (`""`, parent 0). See [Directories](#directories)                             |
 | File directories | count = N; 3 × u32: file index, directory index, string offset of file name (byte offset inside the full path string)                               |
@@ -89,7 +89,7 @@ Files are listed in **data offset order**, 1-based (index 0 is an all-zero null 
 
 Strings are UTF-8 in original case.
 
-String table order: `""`, bundle name, file paths (file order), `""` (root directory, not deduplicated), directory names (directory order).
+String table order: `""`, then per bundle: bundle name, file paths (file order); then `""` (root directory, not deduplicated), directory names (directory order).
 
 ### Directories
 
