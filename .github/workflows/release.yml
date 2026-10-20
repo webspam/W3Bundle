@@ -1,0 +1,111 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      title:
+        description: "Title (defaults to tag)"
+        required: false
+        type: string
+      prerelease:
+        description: "Mark as pre-release"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read version
+        id: version
+        run: |
+          version="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Extract release notes from CHANGELOG
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          awk -v ver="$VERSION" '
+            $0 == "## " ver { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::No '## $VERSION' section found in CHANGELOG.md (or it is empty)."
+            exit 1
+          fi
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          TITLE: ${{ inputs.title }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          args=()
+          [ "$PRERELEASE" = "true" ] && args+=(--prerelease)
+          gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "${TITLE:-$TAG}" \
+            --notes-file notes.md --generate-notes "${args[@]}"
+
+  build:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            executable: W3Bundle.exe
+          - os: ubuntu-latest
+            rid: linux-x64
+            executable: W3Bundle
+          - os: macos-latest
+            rid: osx-arm64
+            executable: W3Bundle
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish
+        run: dotnet publish src/W3Bundle --configuration Release --runtime ${{ matrix.rid }} --output publish
+
+      - name: Package and upload
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.create-release.outputs.tag }}
+          RID: ${{ matrix.rid }}
+          EXECUTABLE: ${{ matrix.executable }}
+        run: |
+          set -euo pipefail
+          mkdir stage
+          cp "publish/$EXECUTABLE" README.md stage/
+          case "$RUNNER_OS" in
+            Windows) asset="W3Bundle-$TAG-$RID.zip" && 7z a -tzip "$asset" ./stage/* ;;
+            *) asset="W3Bundle-$TAG-$RID.tar.gz" && tar -czf "$asset" -C stage . ;;
+          esac
+          gh release upload "$TAG" "$asset"
