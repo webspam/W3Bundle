@@ -2,7 +2,7 @@ using System.Text;
 
 namespace W3Bundle.Tests;
 
-sealed record StoredFile(uint PathOffset, uint CompressedSize, uint Size, uint FirstEntry, uint Compression);
+sealed record StoredFile(uint PathOffset, uint CompressedSize, uint Size, uint FirstEntry, uint FirstBuffer, uint BufferCount, uint Compression);
 
 sealed record StoredEntry(uint Offset, uint CompressedSize, uint File, uint Bundle);
 
@@ -23,18 +23,22 @@ sealed record ParsedMetadataStore(
     StoredFile[] Files,
     StoredEntry[] Entries,
     StoredBundle[] Bundles,
-    byte UnknownByte,
+    uint[] Buffers,
     StoredDirectory[] Directories,
     StoredFileDirectory[] FileDirectories,
     StoredHash[] Hashes) {
 
     public string StringAt(uint offset) {
         int end = Array.IndexOf(Strings, (byte)0, (int)offset);
-        return Encoding.ASCII.GetString(Strings, (int)offset, end - (int)offset);
+        return Encoding.UTF8.GetString(Strings, (int)offset, end - (int)offset);
     }
+
+    public string PathOf(uint file) => StringAt(Files[file].PathOffset);
 }
 
 static class MetadataStoreReader {
+    public const byte EmptyCount = 0x80;
+
     public static ParsedMetadataStore Parse(byte[] store) {
         using var reader = new BinaryReader(new MemoryStream(store));
         uint magic = reader.ReadUInt32();
@@ -46,12 +50,7 @@ static class MetadataStoreReader {
         var files = ReadArray(reader, () => {
             uint pathOffset = reader.ReadUInt32();
             ReadZero(reader);
-            uint compressedSize = reader.ReadUInt32();
-            uint size = reader.ReadUInt32();
-            uint firstEntry = reader.ReadUInt32();
-            ReadZero(reader);
-            ReadZero(reader);
-            return new StoredFile(pathOffset, compressedSize, size, firstEntry, reader.ReadUInt32());
+            return new StoredFile(pathOffset, reader.ReadUInt32(), reader.ReadUInt32(), reader.ReadUInt32(), reader.ReadUInt32(), reader.ReadUInt32(), reader.ReadUInt32());
         });
         var entries = ReadArray(reader, () => {
             uint offset = reader.ReadUInt32();
@@ -65,7 +64,7 @@ static class MetadataStoreReader {
             ReadZero(reader);
             return new StoredBundle(dataBlockSize, reader.ReadUInt32(), reader.ReadUInt32(), reader.ReadUInt32(), reader.ReadUInt32());
         });
-        byte unknownByte = reader.ReadByte();
+        var buffers = ReadArray(reader, reader.ReadUInt32);
         var directories = ReadArray(reader, () => new StoredDirectory(reader.ReadUInt32(), reader.ReadUInt32()));
         var fileDirectories = ReadArray(reader, () => new StoredFileDirectory(reader.ReadUInt32(), reader.ReadUInt32(), reader.ReadUInt32()));
         var hashes = ReadArray(reader, () => new StoredHash(reader.ReadUInt64(), reader.ReadUInt32(), reader.ReadInt32()));
@@ -73,7 +72,7 @@ static class MetadataStoreReader {
         if (reader.BaseStream.Position != store.Length) {
             throw new InvalidDataException($"{store.Length - reader.BaseStream.Position} trailing bytes");
         }
-        return new ParsedMetadataStore(magic, version, maxCompressedSize, maxSize, strings, files, entries, bundles, unknownByte, directories, fileDirectories, hashes);
+        return new ParsedMetadataStore(magic, version, maxCompressedSize, maxSize, strings, files, entries, bundles, buffers, directories, fileDirectories, hashes);
     }
 
     static T[] ReadArray<T>(BinaryReader reader, Func<T> readElement) {
@@ -87,6 +86,9 @@ static class MetadataStoreReader {
 
     static int ReadCount(BinaryReader reader) {
         byte b = reader.ReadByte();
+        if (b == EmptyCount) {
+            return 0;
+        }
         if ((b & 0x80) != 0) {
             throw new InvalidDataException("Count with bit7 set");
         }

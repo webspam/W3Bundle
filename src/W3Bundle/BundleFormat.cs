@@ -11,9 +11,16 @@ public static class BundleFormat {
     public const uint CompressionNone = 0;
     public const uint CompressionLz4Hc = 5;
     public const int DataAlignment = 16;
+    public const string BlobBundleName = "blob0.bundle";
+    public const string BuffersBundleName = "buffers0.bundle";
+    const string BufferExtension = ".buffer";
     const ushort HeaderVersion = 5;
 
     public static uint Align(uint value) => (value + DataAlignment - 1) & ~(uint)(DataAlignment - 1);
+
+    public static bool IsBuffer(string path) => path.EndsWith(BufferExtension, StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsBuffersBundle(string bundleName) => bundleName.StartsWith("buffers", StringComparison.OrdinalIgnoreCase);
 
     public static void WriteHeader(Span<byte> header, uint alignedBundleSize, uint tocSize) {
         header.Clear();
@@ -26,8 +33,7 @@ public static class BundleFormat {
 
     public static void WriteTocEntry(Span<byte> slot, BundleEntry entry) {
         slot.Clear();
-        int nameLength = Encoding.ASCII.GetBytes(entry.Path, slot[..(NameSize - 1)]);
-        if (nameLength != entry.Path.Length) {
+        if (!Encoding.UTF8.TryGetBytes(entry.Path, slot[..(NameSize - 1)], out _)) {
             throw new InvalidDataException($"Path too long for bundle: {entry.Path}");
         }
         var fields = slot[(NameSize + 16)..];
@@ -57,7 +63,7 @@ public static class BundleFormat {
             int terminator = name.IndexOf((byte)0);
             var fields = slot[(NameSize + 16)..];
             entries.Add(new BundleEntry(
-                Encoding.ASCII.GetString(terminator < 0 ? name : name[..terminator]),
+                Encoding.UTF8.GetString(terminator < 0 ? name : name[..terminator]),
                 BinaryPrimitives.ReadUInt32LittleEndian(fields),
                 BinaryPrimitives.ReadUInt32LittleEndian(fields[8..]),
                 BinaryPrimitives.ReadUInt32LittleEndian(fields[12..]),

@@ -37,12 +37,57 @@ public sealed class BundlePackerTests : IDisposable {
     }
 
     [Test]
-    public async Task StoresLowercaseBackslashSeparatedPaths() {
-        source.Write("Dir/Sub/File.TXT", TestData.Text(64));
+    public async Task StoresOriginalCaseBackslashSeparatedPaths() {
+        source.Write("Dir/Sub/File_OLD.TXT", TestData.Text(64));
 
         var entries = PackAndReadToc();
 
-        await Assert.That(entries.Single().Path).IsEqualTo(@"dir\sub\file.txt");
+        await Assert.That(entries.Single().Path).IsEqualTo(@"Dir\Sub\File_OLD.TXT");
+    }
+
+    [Test]
+    public async Task StoresNonAsciiPathsAsUtf8() {
+        const string path = "d\\reginald’s.w2mesh";
+        source.Write(path, TestData.Text(64));
+
+        byte[] bundle = File.ReadAllBytes(Pack());
+        byte[] expectedName = [.. Encoding.UTF8.GetBytes(path), 0];
+
+        using (Assert.Multiple()) {
+            await Assert.That(bundle.AsSpan(BundleFormat.HeaderSize, expectedName.Length).ToArray()).IsEquivalentTo(expectedName, CollectionOrdering.Matching);
+            await Assert.That(BundleFormat.ReadToc(Pack()).Entries.Single().Path).IsEqualTo(path);
+        }
+    }
+
+    [Test]
+    public async Task RejectsPathsLongerThanTheNameSlotInUtf8() {
+        source.Write($"{new string('’', 43)}/{new string('’', 42)}.txt", TestData.Text(64));
+
+        await Assert.That(() => BundlePacker.Pack(source.Path, output.Path)).Throws<InvalidDataException>();
+    }
+
+    [Test]
+    public async Task WritesBufferFilesToSeparateBundle() {
+        source.Write(@"d\m.w2mesh", TestData.Text(64));
+        source.Write(@"d\m.w2mesh.1.buffer", TestData.Text(64, 1));
+        source.Write(@"d\m.w2mesh.2.BUFFER", TestData.Text(64, 2));
+
+        var bundles = BundlePacker.Pack(source.Path, output.Path);
+
+        using (Assert.Multiple()) {
+            await Assert.That(bundles.Select(b => Path.GetFileName(b))).IsEquivalentTo([BundleFormat.BlobBundleName, BundleFormat.BuffersBundleName], CollectionOrdering.Matching);
+            await Assert.That(BundleFormat.ReadToc(bundles[0]).Entries.Select(e => e.Path)).IsEquivalentTo([@"d\m.w2mesh"]);
+            await Assert.That(BundleFormat.ReadToc(bundles[1]).Entries.Select(e => e.Path)).IsEquivalentTo([@"d\m.w2mesh.1.buffer", @"d\m.w2mesh.2.BUFFER"], CollectionOrdering.Matching);
+        }
+    }
+
+    [Test]
+    public async Task OmitsBuffersBundleWithoutBufferFiles() {
+        source.Write("a.txt", TestData.Text(64));
+
+        var bundles = BundlePacker.Pack(source.Path, output.Path);
+
+        await Assert.That(bundles.Select(b => Path.GetFileName(b))).IsEquivalentTo([BundleFormat.BlobBundleName]);
     }
 
     [Test]
@@ -53,7 +98,7 @@ public sealed class BundlePackerTests : IDisposable {
 
         var paths = PackAndReadToc().Select(e => e.Path);
 
-        await Assert.That(paths).IsEquivalentTo([@"a.txt", @"b.txt", @"_x.txt", @"a\c.txt", @"b\d.txt"], CollectionOrdering.Matching);
+        await Assert.That(paths).IsEquivalentTo([@"A.txt", @"b.txt", @"_x.txt", @"a\c.txt", @"B\d.txt"], CollectionOrdering.Matching);
     }
 
     [Test]
@@ -175,7 +220,7 @@ public sealed class BundlePackerTests : IDisposable {
         await Assert.That(() => BundlePacker.Pack(source.Path, output.Path)).Throws<InvalidOperationException>();
     }
 
-    string Pack() => BundlePacker.Pack(source.Path, output.Path);
+    string Pack() => BundlePacker.Pack(source.Path, output.Path).Single();
 
     List<BundleEntry> PackAndReadToc() => BundleFormat.ReadToc(Pack()).Entries;
 

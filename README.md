@@ -27,10 +27,6 @@ dotnet publish
 dotnet test
 ```
 
-## Limitations
-
-- `metadatastore` supports exactly one `.bundle` per directory
-
 ## Compatibility with wcc_lite
 
-`blob0.bundle` and `metadata.store` matched wcc_lite byte-for-byte in all tests so far. See [How W3Bundle works](docs/how-it-works.md).
+`blob0.bundle`, `buffers0.bundle` and `metadata.store` matched wcc_lite byte-for-byte in all tests so far. See [How W3Bundle works](docs/how-it-works.md).

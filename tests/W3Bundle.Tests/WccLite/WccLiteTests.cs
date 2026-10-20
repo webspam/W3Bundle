@@ -43,15 +43,16 @@ public sealed class WccLiteTests : IDisposable {
 
         var hashes = ContentHashes();
         string metadata = hashes.Metadata is null ? "null" : $"\"{hashes.Metadata}\"";
-        Console.WriteLine($"[\"{caseName}\"] = new(\"{hashes.Bundle}\", {metadata}),");
+        string buffers = hashes.Buffers is null ? "" : $", \"{hashes.Buffers}\"";
+        Console.WriteLine($"[\"{caseName}\"] = new(\"{hashes.Bundle}\", {metadata}{buffers}),");
     }
 
-    WccLiteHashes ContentHashes() {
-        string metadataPath = Path.Combine(content.Path, "metadata.store");
-        return new(
-            Sha256(Path.Combine(content.Path, "blob0.bundle")),
-            File.Exists(metadataPath) ? Sha256(metadataPath) : null);
-    }
+    WccLiteHashes ContentHashes() => new(
+        Sha256(Path.Combine(content.Path, BundleFormat.BlobBundleName)),
+        Sha256IfExists(Path.Combine(content.Path, "metadata.store")),
+        Sha256IfExists(Path.Combine(content.Path, BundleFormat.BuffersBundleName)));
+
+    static string? Sha256IfExists(string path) => File.Exists(path) ? Sha256(path) : null;
 
     static string Sha256(string path) => Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path)));
 

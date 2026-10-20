@@ -30,22 +30,33 @@ try {
             Report(BundlePacker.Pack(Require("dir"), Require("outdir")));
             break;
         case "metadatastore":
-            Report(MetadataStore.Generate(Require("path")));
+            Report([MetadataStore.Generate(Require("path"))]);
             break;
         case "build":
             string outdir = Require("outdir");
             Report(BundlePacker.Pack(Require("dir"), outdir));
-            Report(MetadataStore.Generate(outdir));
+            Report([MetadataStore.Generate(outdir)]);
             break;
         default:
             Console.Error.WriteLine(Usage);
             return 1;
     }
 }
-catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException or InvalidOperationException or NotSupportedException or UnauthorizedAccessException) {
+catch (Exception ex) when (
+    ex is IOException
+    or InvalidDataException
+    or ArgumentException
+    or InvalidOperationException
+    or NotSupportedException
+    or UnauthorizedAccessException
+) {
     Console.Error.WriteLine(ex.Message);
     return 1;
 }
 return 0;
 
-void Report(string path) => Console.WriteLine($"{path} ({stopwatch.ElapsedMilliseconds} ms)");
+void Report(IEnumerable<string> paths) {
+    foreach (string path in paths) {
+        Console.WriteLine($"{path} ({stopwatch.ElapsedMilliseconds} ms)");
+    }
+}

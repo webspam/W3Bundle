@@ -6,7 +6,16 @@ wcc_lite's output is consistent with a pre-1.8 LZ4HC. [lz4net](https://www.nuget
 
 Modern LZ4HC (K4os, any level) did not: it allows a final match at `iend - MFLIMIT`, and resolves overlapping matches differently.
 
-## Bundle format (`blob0.bundle`)
+## Bundles
+
+| Bundle            | Contents                                    |
+| ----------------- | ------------------------------------------- |
+| `blob0.bundle`    | Every file except `*.buffer`                |
+| `buffers0.bundle` | `*.buffer` files. Omitted when there are none |
+
+Both use the same format, TOC order and data order rules, independently.
+
+## Bundle format
 
 All integers little-endian.
 
@@ -26,7 +35,7 @@ All integers little-endian.
 
 | Offset | Type      | Value                                            |
 | ------ | --------- | ------------------------------------------------ |
-| 0x000  | char[256] | Path, backslash separated, lowercase, NUL padded |
+| 0x000  | char[256] | Path, UTF-8, backslash separated, original case, NUL padded |
 | 0x100  | byte[16]  | 0 (hash slot, unused by wcc_lite)                |
 | 0x110  | u32       | Data offset                                      |
 | 0x114  | u32       | 0                                                |
@@ -62,20 +71,40 @@ static IEnumerable<int> Order(int[] tocIndices) {
 
 ## metadata.store format
 
-Arrays are prefixed with a CR2W-style compressed count: first byte `bit7` sign, `bit6` continue, 6 value bits; following bytes `bit7` continue, 7 value bits.
+Arrays are prefixed with a CR2W-style compressed count: first byte `bit7` sign, `bit6` continue, 6 value bits; following bytes `bit7` continue, 7 value bits. An empty array is written as `0x80`.
 
-Files are listed in **data offset order**, 1-based (index 0 is an all-zero null record).
+Strings are UTF-8 in original case.
 
-| Section          | Layout                                                                                                                                               |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Header           | u32 magic `0x4D545603` (`\x03VTM`), u32 version 7, u32 max compressed size, u32 max uncompressed size                                                |
-| Strings          | count = byte length; NUL-terminated strings                                                                                                          |
-| Files            | count = N + 1; 8 × u32: path string offset, 0, compressed size, uncompressed size, first entry index (= file index), 0, 0, compression               |
-| Entries          | count = N + 1; 6 × u32: data offset, 0, compressed size, 0, file index, bundle index (1)                                                             |
-| Bundles          | count = 2; 6 × u32: data block size (aligned bundle size − data start), 0, data start, name string offset, first file (1), file count                |
-| Unknown          | 1 byte `0x80` (meaning unknown, copied from wcc_lite, possible terminator)                                                                           |
-| Directories      | count = D; 2 × u32: name string offset, parent index. Index 0 is root (`""`, parent 0). Order of first appearance walking files                      |
-| File directories | count = N; 3 × u32: file index, directory index, string offset of file name (inside the full path string)                                            |
-| Hashes           | count = N; u64 FNV-1a 64 of path, u32 file index, i32 `0` for file 1 and `-1` for all others (meaning unknown, copied from wcc_lite). Sorted by hash |
+Bundles are read in name order (`blob0.bundle`, `buffers0.bundle`). Files are listed bundle by bundle, each in **data offset order**, 1-based (index 0 is an all-zero null record).
 
-String table order: `""`, bundle name, file paths (file order), `""` (root directory, not deduplicated), directory names (directory order).
+N = all files, M = non-buffer files.
+
+| Section          | Layout                                                                                                                                                                  |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Header           | u32 magic `0x4D545603` (`\x03VTM`), u32 version 7, u32 max compressed size, u32 max uncompressed size                                                                   |
+| Strings          | count = byte length; NUL-terminated strings                                                                                                                             |
+| Files            | count = N + 1; 8 × u32: path string offset, 0, compressed size, uncompressed size, first entry index (= file index), first buffer, buffer count, compression           |
+| Entries          | count = N + 1; 6 × u32: data offset, 0, compressed size, 0, file index, bundle index                                                                                    |
+| Bundles          | count = bundles + 1; 6 × u32: data block size (aligned bundle size − data start, `0` for `buffers*.bundle`), 0, data start, name string offset, first file, file count |
+| Buffers          | count = total slots; u32 file index per slot, `0xFFFFFFFF` for a missing buffer ID                                                                                      |
+| Directories      | count = D; 2 × u32: name string offset, parent index. Index 0 is root (`""`, parent 0)                                                                                  |
+| File directories | count = M; 3 × u32: file index, directory index, string offset of file name (byte offset inside the full path string)                                                  |
+| Hashes           | count = M; u64 path hash, u32 file index, i32 unknown. Sorted by hash                                                                                                   |
+
+String table order: `""`, then per bundle: bundle name, file paths (file order); then `""` (root directory, not deduplicated), directory names (directory order).
+
+### Directories
+
+Created walking non-buffer files in file order, children in order of first appearance. Written depth-first, pre-order.
+
+### Buffers
+
+- `<master>.<id>.buffer`, id ≥ 1, belongs to the non-buffer file `<master>`
+- Per master, in file order: `buffer count` = highest id, `first buffer` = index of its first slot, slot `id − 1` = buffer file index
+- Files without buffers: first buffer 0, buffer count 0
+- wcc_lite fails (and so does W3Bundle) on a buffer without an id (`Buffer file without a number`) or without a master (`No master file for buffer`)
+
+### Hashes
+
+- FNV-1a 64 over the UTF-8 path with ASCII `A-Z` lowercased only (`É` is unchanged)
+- Unknown i32 (copied from wcc_lite): with no buffers, `0` for file 1 and `-1` for all others; with buffers, `0` for all

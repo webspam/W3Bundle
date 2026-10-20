@@ -5,7 +5,7 @@ namespace W3Bundle;
 public static class BundlePacker {
     sealed record PackedFile(string BundlePath, byte[] Stored, int StoredLength, uint Size, uint Crc32, uint Compression);
 
-    public static string Pack(string sourceDirectory, string outputDirectory, string bundleName = "blob0.bundle") {
+    public static IReadOnlyList<string> Pack(string sourceDirectory, string outputDirectory) {
         string root = Path.GetFullPath(sourceDirectory);
         var sourceFiles = EnumerateInBundleOrder(new DirectoryInfo(root)).ToArray();
         if (sourceFiles.Length == 0) {
@@ -15,6 +15,14 @@ public static class BundlePacker {
         var packed = new PackedFile[sourceFiles.Length];
         Parallel.For(0, sourceFiles.Length, i => packed[i] = Compress(root, sourceFiles[i]));
 
+        Directory.CreateDirectory(outputDirectory);
+        return [.. packed
+            .GroupBy(f => BundleFormat.IsBuffer(f.BundlePath) ? BundleFormat.BuffersBundleName : BundleFormat.BlobBundleName)
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => WriteBundle(Path.Combine(outputDirectory, g.Key), [.. g]))];
+    }
+
+    static string WriteBundle(string outputPath, PackedFile[] packed) {
         uint tocSize = (uint)(packed.Length * BundleFormat.TocEntrySize);
         uint offset = BundleFormat.HeaderSize + tocSize;
         uint end = offset;
@@ -33,8 +41,6 @@ public static class BundlePacker {
             packed[i].Stored.AsSpan(0, packed[i].StoredLength).CopyTo(output.AsSpan((int)entries[i].Offset));
         }
 
-        Directory.CreateDirectory(outputDirectory);
-        string outputPath = Path.Combine(outputDirectory, bundleName);
         File.WriteAllBytes(outputPath, output);
         return outputPath;
     }
@@ -66,7 +72,7 @@ public static class BundlePacker {
         byte[] source = File.ReadAllBytes(fullPath);
         byte[] compressed = Lz4Hc.Encode(source);
         int length = compressed.Length;
-        string bundlePath = Path.GetRelativePath(root, fullPath).Replace('/', '\\').ToLowerInvariant();
+        string bundlePath = Path.GetRelativePath(root, fullPath).Replace('/', '\\');
         uint crc32 = Crc32.HashToUInt32(source);
         return length < source.Length
             ? new PackedFile(bundlePath, compressed, length, (uint)source.Length, crc32, BundleFormat.CompressionLz4Hc)

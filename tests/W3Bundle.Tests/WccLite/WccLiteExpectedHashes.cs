@@ -1,6 +1,6 @@
 namespace W3Bundle.Tests.WccLite;
 
-sealed record WccLiteHashes(string Bundle, string? Metadata);
+sealed record WccLiteHashes(string Bundle, string? Metadata, string? Buffers = null);
 
 static class WccLiteExpectedHashes {
     public static IReadOnlyDictionary<string, WccLiteHashes> ByCase { get; } = new Dictionary<string, WccLiteHashes> {
@@ -46,5 +46,9 @@ static class WccLiteExpectedHashes {
         ["raw-random"] = new("a91652b775582b7081d358c6f74228ed4572d012f3326add061a480a666d30e7", "fd9196eee55f2c91a29c7b1a55bfe014f92fa7baa127b3b180eff7a35f3028c5"),
         ["raw-threshold"] = new("08de587739f73f215962400180198d641e5963b7caf1d704d9b76d3403627c02", "67ce2bf141d336096273d5e88891f30037bb230b4679247f29c975c08b76f9f9"),
         ["empty-file"] = new("f1ba97257e8ecbf69c9777f91934afb109bf815b4cbba78c4653ae5115f364fb", null),
+        ["mixed-case"] = new("26829f31325430db576b1824ba73457a51aae481bb90ccd37f91bbd1b52d43ae", "f9c395d319cb8d89aa617f4bec3d43706fd9d24339d6f23564e8db050a62b2be"),
+        ["non-ascii"] = new("9760b2582510d70a3077950e7a975f5ec4e82d1720a91be21974d532e3cfffa1", "46c3269c35ba1bc9c881ebd68dcd525fe04a43ff74ddc5eb27226f1813176a40"),
+        ["buffers"] = new("eb5322292f95be9a9953696798f75967ff9850ba65d979beac3896d9c0bd75bc", "6679d390fa88dc60fa02a64abbc6da9e2675db77dd7bd7fa71ce37daf8dd3e16", "9afa2ffc9b23253fef0e61fab944e8f1a5ffc46dc88b554f6f879be7bfeb41c3"),
+        ["buffers-many"] = new("67aa74a8d5c12117f2349c856150e51cee031d6def18081c108bb0e9661ad3ba", "0b5109ac56cbbe8a6331a2c650f53ead101acd79abd6494c758650c4abd8f720", "99b724126f4597ae82a90a89f94acce0c72684091bfcc1bafc28fb404c8bed9b"),
     };
 }

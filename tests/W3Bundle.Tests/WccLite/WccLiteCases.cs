@@ -11,7 +11,7 @@ sealed record WccLiteCase(string Name, Func<IEnumerable<(string RelativePath, by
 }
 
 static class WccLiteCases {
-    public static IReadOnlyList<WccLiteCase> All { get; } = [.. DerivationCases(), .. HoldoutCases()];
+    public static IReadOnlyList<WccLiteCase> All { get; } = [.. DerivationCases(), .. HoldoutCases(), .. PathAndBufferCases()];
 
     public static IEnumerable<string> Names() => All.Select(c => c.Name);
 
@@ -53,6 +53,41 @@ static class WccLiteCases {
 
         yield return new("empty-file", () => [("d\\a_empty.txt", []), ("d\\b_text.txt", TestData.Text(64, 1))]);
     }
+
+    static IEnumerable<WccLiteCase> PathAndBufferCases() {
+        yield return new("mixed-case", () => [
+            .. Filler(),
+            ("d\\Mixed_OLD.txt", TestData.Text(128, 100)),
+            ("Upper\\Sub\\File.TXT", TestData.Text(128, 101)),
+        ]);
+
+        yield return new("non-ascii", () => [
+            .. Filler(),
+            ("d\\reginald’s.w2mesh", TestData.Text(128, 100)),
+            ("d\\ÉÀ_OLD.txt", TestData.Text(128, 101)),
+            ("ÜDir\\Ä.txt", TestData.Text(128, 102)),
+        ]);
+
+        yield return new("buffers", () => [
+            .. Filler(),
+            ("d\\reginald’s.w2mesh", TestData.Text(128, 100)),
+            ("d\\reginald’s.w2mesh.1.buffer", TestData.Noise(3000, 100)),
+            ("m\\n.w2mesh", TestData.Text(128, 101)),
+            ("m\\n.w2mesh.1.buffer", TestData.Text(3000, 101)),
+            ("m\\n.w2mesh.2.buffer", TestData.Noise(3000, 102)),
+            ("m\\n.w2mesh.10.buffer", TestData.Noise(3000, 103)),
+        ]);
+
+        yield return new("buffers-many", () => [
+            .. Filler(),
+            .. Enumerable.Range(0, 20).SelectMany(i => new[] {
+                ($"d\\Mesh_{i:D2}.w2mesh", TestData.Text(128, 100 + i)),
+                ($"d\\Mesh_{i:D2}.w2mesh.1.buffer", TestData.Noise(3000, 100 + i)),
+            }),
+        ]);
+    }
+
+    static IEnumerable<(string, byte[])> Filler() => Enumerable.Range(0, 6).Select(i => ($"d\\f{i:D3}.txt", TestData.Text(128, i)));
 
     static WccLiteCase CountCase(int n) =>
         new($"count-{n:D4}", () => Enumerable.Range(0, n).Select(i => ($"d\\f{i:D4}.txt", TestData.Text(64, i))));
