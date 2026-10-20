@@ -86,9 +86,21 @@ public sealed class MetadataStoreTests : IDisposable {
             Entry(@"a\b\x.txt", 0),
             Entry("root.txt", 1));
 
-        string[] strings = Encoding.ASCII.GetString(store.Strings).TrimEnd('\0').Split('\0');
+        await Assert.That(Strings(store)).IsEquivalentTo(["", BundleName, @"a\b\x.txt", "root.txt", "", "a", "b"], CollectionOrdering.Matching);
+    }
 
-        await Assert.That(strings).IsEquivalentTo(["", BundleName, @"a\b\x.txt", "root.txt", "", "a", "b"], CollectionOrdering.Matching);
+    [Test]
+    public async Task KeepsOriginalCaseAndUtf8InStrings() {
+        var store = Build(
+            Entry("Dir\\reginald’s.w2mesh", 0),
+            Entry("ÜDir\\Ä_OLD.txt", 1));
+
+        var fileNames = store.FileDirectories.Select(f => store.StringAt(f.NameOffset));
+
+        using (Assert.Multiple()) {
+            await Assert.That(Strings(store)).IsEquivalentTo(["", BundleName, "Dir\\reginald’s.w2mesh", "ÜDir\\Ä_OLD.txt", "", "Dir", "ÜDir"], CollectionOrdering.Matching);
+            await Assert.That(fileNames).IsEquivalentTo(["reginald’s.w2mesh", "Ä_OLD.txt"], CollectionOrdering.Matching);
+        }
     }
 
     [Test]
@@ -110,7 +122,9 @@ public sealed class MetadataStoreTests : IDisposable {
     [Test]
     [Arguments("Dir\\f0.txt", 0x4a5f1cbd5b9e8c58UL)]
     [Arguments("dir\\F0.TXT", 0x4a5f1cbd5b9e8c58UL)]
-    public async Task HashesPathWithAsciiLowercase(string path, ulong wccLiteHash) {
+    [Arguments("Dir\\ÉÀ_OLD.txt", 0x05ef0a7c762435ffUL)]
+    [Arguments("ÜDir\\Ä.txt", 0x16e26955c8ab43feUL)]
+    public async Task HashesUtf8PathWithAsciiOnlyLowercase(string path, ulong wccLiteHash) {
         var store = Build(Entry(path, 0));
 
         await Assert.That(store.Hashes.Single().Hash).IsEqualTo(wccLiteHash);
@@ -154,6 +168,8 @@ public sealed class MetadataStoreTests : IDisposable {
 
         await Assert.That(() => MetadataStore.Generate(content.Path)).Throws<NotSupportedException>();
     }
+
+    static string[] Strings(ParsedMetadataStore store) => Encoding.UTF8.GetString(store.Strings).TrimEnd('\0').Split('\0');
 
     static BundleEntry Entry(string path, int dataIndex, uint size = 64, uint compressedSize = 32, uint compression = BundleFormat.CompressionLz4Hc) =>
         new(path, 0x10000 + (uint)dataIndex * 0x100, size, compressedSize, 0, compression);

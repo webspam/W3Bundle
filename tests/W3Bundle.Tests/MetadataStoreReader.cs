@@ -30,7 +30,7 @@ sealed record ParsedMetadataStore(
 
     public string StringAt(uint offset) {
         int end = Array.IndexOf(Strings, (byte)0, (int)offset);
-        return Encoding.ASCII.GetString(Strings, (int)offset, end - (int)offset);
+        return Encoding.UTF8.GetString(Strings, (int)offset, end - (int)offset);
     }
 }
 

@@ -95,7 +95,8 @@ public static class MetadataStore {
 
         WriteCompressedInt(writer, files.Length);
         for (int i = 0; i < files.Length; i++) {
-            int nameStart = files[i].Path.LastIndexOf('\\') + 1;
+            string path = files[i].Path;
+            int nameStart = Encoding.UTF8.GetByteCount(path.AsSpan(0, path.LastIndexOf('\\') + 1));
             writer.Write((uint)(i + 1));
             writer.Write((uint)fileDirectories[i]);
             writer.Write(pathOffsets[i] + (uint)nameStart);
@@ -135,8 +136,8 @@ public static class MetadataStore {
 
     static ulong PathHash(string path) {
         ulong hash = FnvOffsetBasis;
-        foreach (char c in path) {
-            hash ^= c is >= 'A' and <= 'Z' ? (byte)(c | 0x20) : (byte)c;
+        foreach (byte b in Encoding.UTF8.GetBytes(path)) {
+            hash ^= b is >= (byte)'A' and <= (byte)'Z' ? (byte)(b | 0x20) : b;
             hash *= FnvPrime;
         }
         return hash;
@@ -166,7 +167,7 @@ public static class MetadataStore {
 
         public uint Add(string value) {
             uint offset = (uint)buffer.Count;
-            buffer.AddRange(Encoding.ASCII.GetBytes(value));
+            buffer.AddRange(Encoding.UTF8.GetBytes(value));
             buffer.Add(0);
             return offset;
         }

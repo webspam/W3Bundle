@@ -26,8 +26,7 @@ public static class BundleFormat {
 
     public static void WriteTocEntry(Span<byte> slot, BundleEntry entry) {
         slot.Clear();
-        int nameLength = Encoding.ASCII.GetBytes(entry.Path, slot[..(NameSize - 1)]);
-        if (nameLength != entry.Path.Length) {
+        if (!Encoding.UTF8.TryGetBytes(entry.Path, slot[..(NameSize - 1)], out _)) {
             throw new InvalidDataException($"Path too long for bundle: {entry.Path}");
         }
         var fields = slot[(NameSize + 16)..];
@@ -57,7 +56,7 @@ public static class BundleFormat {
             int terminator = name.IndexOf((byte)0);
             var fields = slot[(NameSize + 16)..];
             entries.Add(new BundleEntry(
-                Encoding.ASCII.GetString(terminator < 0 ? name : name[..terminator]),
+                Encoding.UTF8.GetString(terminator < 0 ? name : name[..terminator]),
                 BinaryPrimitives.ReadUInt32LittleEndian(fields),
                 BinaryPrimitives.ReadUInt32LittleEndian(fields[8..]),
                 BinaryPrimitives.ReadUInt32LittleEndian(fields[12..]),

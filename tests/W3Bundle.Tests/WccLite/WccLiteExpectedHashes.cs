@@ -47,5 +47,6 @@ static class WccLiteExpectedHashes {
         ["raw-threshold"] = new("08de587739f73f215962400180198d641e5963b7caf1d704d9b76d3403627c02", "67ce2bf141d336096273d5e88891f30037bb230b4679247f29c975c08b76f9f9"),
         ["empty-file"] = new("f1ba97257e8ecbf69c9777f91934afb109bf815b4cbba78c4653ae5115f364fb", null),
         ["mixed-case"] = new("26829f31325430db576b1824ba73457a51aae481bb90ccd37f91bbd1b52d43ae", "f9c395d319cb8d89aa617f4bec3d43706fd9d24339d6f23564e8db050a62b2be"),
+        ["non-ascii"] = new("9760b2582510d70a3077950e7a975f5ec4e82d1720a91be21974d532e3cfffa1", "46c3269c35ba1bc9c881ebd68dcd525fe04a43ff74ddc5eb27226f1813176a40"),
     };
 }

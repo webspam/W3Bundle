@@ -46,6 +46,27 @@ public sealed class BundlePackerTests : IDisposable {
     }
 
     [Test]
+    public async Task StoresNonAsciiPathsAsUtf8() {
+        const string path = "d\\reginald’s.w2mesh";
+        source.Write(path, TestData.Text(64));
+
+        byte[] bundle = File.ReadAllBytes(Pack());
+        byte[] expectedName = [.. Encoding.UTF8.GetBytes(path), 0];
+
+        using (Assert.Multiple()) {
+            await Assert.That(bundle.AsSpan(BundleFormat.HeaderSize, expectedName.Length).ToArray()).IsEquivalentTo(expectedName, CollectionOrdering.Matching);
+            await Assert.That(BundleFormat.ReadToc(Pack()).Entries.Single().Path).IsEqualTo(path);
+        }
+    }
+
+    [Test]
+    public async Task RejectsPathsLongerThanTheNameSlotInUtf8() {
+        source.Write($"{new string('’', 85)}.txt", TestData.Text(64));
+
+        await Assert.That(() => BundlePacker.Pack(source.Path, output.Path)).Throws<InvalidDataException>();
+    }
+
+    [Test]
     public async Task OrdersTocFilesBeforeSubdirectoriesIgnoringCase() {
         foreach (string path in new[] { "b.txt", "A.txt", "_x.txt", "B/d.txt", "a/c.txt" }) {
             source.Write(path, TestData.Text(64));

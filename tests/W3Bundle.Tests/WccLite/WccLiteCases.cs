@@ -60,6 +60,13 @@ static class WccLiteCases {
             ("d\\Mixed_OLD.txt", TestData.Text(128, 100)),
             ("Upper\\Sub\\File.TXT", TestData.Text(128, 101)),
         ]);
+
+        yield return new("non-ascii", () => [
+            .. Filler(),
+            ("d\\reginald’s.w2mesh", TestData.Text(128, 100)),
+            ("d\\ÉÀ_OLD.txt", TestData.Text(128, 101)),
+            ("ÜDir\\Ä.txt", TestData.Text(128, 102)),
+        ]);
     }
 
     static IEnumerable<(string, byte[])> Filler() => Enumerable.Range(0, 6).Select(i => ($"d\\f{i:D3}.txt", TestData.Text(128, i)));
