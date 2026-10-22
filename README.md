@@ -30,3 +30,7 @@ dotnet test
 ## Compatibility with wcc_lite
 
 `blob0.bundle`, `buffers0.bundle` and `metadata.store` matched wcc_lite byte-for-byte in all tests so far. See [How W3Bundle works](docs/how-it-works.md).
+
+## Credits
+
+- [relapse12](https://github.com/relapse12) extensive testing - identified all 3 issues/gaps in 0.2.0
